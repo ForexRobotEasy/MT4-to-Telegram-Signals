@@ -1,0 +1,190 @@
+
+//+------------------------------------------------------------------+
+//|               MT4 to Telegram Signals                                |
+//|               Developer's Site: forexroboteasy.com                |
+//|               Development: Forex Robot Easy Team                  |
+//+------------------------------------------------------------------+
+
+#include <TelegramAPI.mqh>
+
+// Telegram API credentials
+string botToken = 'YOUR_BOT_TOKEN';
+int64 chatID = YOUR_CHAT_ID;
+string telegramGroup = 'YOUR_TELEGRAM_GROUP';
+
+// Symbol and Magic Number filtering
+string[] allowedSymbols = {'EURUSD', 'GBPUSD', 'USDJPY'};
+int[] allowedMagicNumbers = {123, 456, 789};
+
+// Customizable message format
+string messageFormat = 'Symbol: %s\nOrder Type: %s\nPrice: %f\nVolume: %f';
+
+//+------------------------------------------------------------------+
+//|                       Initialization                             |
+//+------------------------------------------------------------------+
+void OnInit()
+{
+   // Connect to Telegram API
+   if(!TelegramAPI::Connect(botToken))
+   {
+      Print('Failed to connect to Telegram API!');
+      return;
+   }
+   
+   // Join Telegram group
+   if(!TelegramAPI::JoinGroup(telegramGroup))
+   {
+      Print('Failed to join Telegram group!');
+   }
+}
+
+//+------------------------------------------------------------------+
+//|                       Order Notification                          |
+//+------------------------------------------------------------------+
+void OnTradeTransaction(const MqlTradeTransaction &trans)
+{
+   // Check if the transaction is related to opening or closing orders
+   if(trans.type != TRADE_TRANSACTION_ORDER_ADD && trans.type != TRADE_TRANSACTION_ORDER_CLOSE)
+      return;
+   
+   // Check if the symbol and magic number are allowed
+   string symbol = Symbol();
+   int magicNumber = trans.order_magic;
+   
+   if(!IsSymbolAllowed(symbol) || !IsMagicNumberAllowed(magicNumber))
+      return;
+   
+   // Retrieve order details
+   double price = trans.order_price;
+   double volume = trans.order_volume;
+   string orderType = (trans.type == TRADE_TRANSACTION_ORDER_ADD) ? 'Buy' : 'Sell';
+   
+   // Create notification message
+   string message = StringFormat(messageFormat, symbol, orderType, price, volume);
+   
+   // Send notification to Telegram group
+   TelegramAPI::SendMessage(telegramGroup, message);
+}
+
+bool IsSymbolAllowed(string symbol)
+{
+   for(int i = 0; i < ArraySize(allowedSymbols); i++)
+   {
+      if(symbol == allowedSymbols[i])
+         return true;
+   }
+   
+   return false;
+}
+
+bool IsMagicNumberAllowed(int magicNumber)
+{
+   for(int i = 0; i < ArraySize(allowedMagicNumbers); i++)
+   {
+      if(magicNumber == allowedMagicNumbers[i])
+         return true;
+   }
+   
+   return false;
+}
+
+//+------------------------------------------------------------------+
+//|                   Chart Screenshot Function                      |
+//+------------------------------------------------------------------+
+void SendChartScreenshot()
+{
+   // Capture current chart screen
+   int width = ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
+   int height = ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS);
+   
+   int screenshotHandle = ChartScreenShot(0, 'screenshot.bmp', width, height, ALIGN_CENTER);
+   
+   if(screenshotHandle == INVALID_HANDLE)
+   {
+      Print('Failed to capture chart screenshot!');
+      return;
+   }
+   
+   // Convert screenshot to suitable format
+   string screenshotPath = TerminalInfoString(TERMINAL_DATA_PATH) + '\\MQL4\\Files\\screenshot.bmp';
+   string screenshotData = FileReadArray(screenshotPath);
+   
+   // Send screenshot as message attachment
+   TelegramAPI::SendPhoto(telegramGroup, screenshotData);
+}
+
+//+------------------------------------------------------------------+
+//|                      Customizable Message Format                  |
+//+------------------------------------------------------------------+
+void SetMessageFormat(string format)
+{
+   messageFormat = format;
+}
+
+//+------------------------------------------------------------------+
+//|                         Helper Functions                          |
+//+------------------------------------------------------------------+
+string StringFormat(string format, ...)
+{
+   string result;
+   string tmp;
+   int pos;
+   int argIndex = 0;
+   
+   while((pos = StringFind(format, '%')) != -1)
+   {
+      result += StringSubstr(format, 0, pos);
+      tmp = StringSubstr(format, pos, 2);
+      
+      if(tmp == '%s')
+      {
+         result += StringFormat('%s', (string)Argument(argIndex++));
+         format = StringSubstr(format, pos + 2);
+      }
+      else if(tmp == '%f')
+      {
+         result += StringFormat('%f', (double)Argument(argIndex++));
+         format = StringSubstr(format, pos + 2);
+      }
+      else if(tmp == '%d')
+      {
+         result += StringFormat('%d', (int)Argument(argIndex++));
+         format = StringSubstr(format, pos + 2);
+      }
+      else
+      {
+         result += tmp;
+         format = StringSubstr(format, pos + 1);
+      }
+   }
+   
+   result += format;
+   return result;
+}
+
+//+------------------------------------------------------------------+
+//|                          Main Program                             |
+//+------------------------------------------------------------------+
+void OnTick()
+{
+   // Example usage
+   if(IsNewBar())
+   {
+      SendChartScreenshot();
+   }
+}
+
+bool IsNewBar()
+{
+   static datetime previousTime = 0;
+   
+   datetime currentTime = iTime(Symbol(), PERIOD_CURRENT, 0);
+   
+   if(currentTime != previousTime)
+   {
+      previousTime = currentTime;
+      return true;
+   }
+   
+   return false;
+}
